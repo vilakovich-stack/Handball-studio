@@ -4,6 +4,7 @@ const config=window.STUDIO_ACCOUNT_CONFIG;
 if(!config?.enabled)return;
 let client,session=null,account=null,ready=false,loading=false,generation=0,timer,started=false;
 const gate=$('#entryGate'),button=$('#entryLogin'),status=$('#entryStatus');
+const googleSlot=document.createElement('div');googleSlot.id='studioGoogleSignIn';button.after(googleSlot);let preparingGoogle=false;
 const note=$('.entry-note');note.textContent='Accede con tu cuenta. Sergio aprueba cada correo y decide sus permisos.';
 const exit=document.createElement('button');exit.textContent='Usar otra cuenta / salir';exit.hidden=true;button.after(exit);
 const retry=document.createElement('button');retry.textContent='Comprobar aprobación';retry.hidden=true;exit.after(retry);
@@ -41,7 +42,8 @@ renderAccess=async function(){
  }catch(error){toast(error.message)}};
  try{
  const [result,drive]=await Promise.all([json('users'),json('drive-status')]);if(!$('#studioUsers'))return;
- $('#studioDriveStatus').textContent=drive.connected?'Drive conectado.':'Pendiente: conecta tu Drive para cargar la biblioteca.';
+ $('#studioDriveStatus').textContent=drive.connected?'Drive conectado.':drive.setupRequired?'Falta guardar GOOGLE_CLIENT_SECRET en los secretos de Edge Functions de Supabase.':'Pendiente: conecta tu Drive para cargar la biblioteca.';
+ $('#studioConnectOwner').disabled=!!drive.setupRequired;
  $('#studioUsers').innerHTML=result.users.length?result.users.map((u,i)=>'<div class="permission-row"><div><b>'+esc(u.email)+'</b><small>'+esc(({pending:'Pendiente de aprobación',approved:'Autorizado',blocked:'Bloqueado'})[u.status])+'</small></div><select data-user-role="'+i+'" aria-label="Permiso de '+esc(u.email)+'"><option value="reader" '+(u.role==='reader'?'selected':'')+'>Lector</option><option value="writer" '+(u.role==='writer'?'selected':'')+'>Editor</option></select><button data-user-approve="'+i+'">'+(u.status==='approved'?'Guardar permiso':'Aprobar')+'</button><button data-user-block="'+i+'">Bloquear</button></div>').join(''):'<p>No hay solicitudes. Añade el primer correo arriba.</p>';
  for(const [selector,target] of [['[data-user-approve]','approved'],['[data-user-block]','blocked']])$$(selector).forEach(b=>b.onclick=async()=>{const index=Number(target==='approved'?b.dataset.userApprove:b.dataset.userBlock),u=result.users[index];const role=panel.querySelector('[data-user-role="'+index+'"]').value;b.disabled=true;try{await json('users',{email:u.email,role,status:target});await renderAccess()}catch(error){report(error.message);b.disabled=false}});
  }catch(error){report(error.message)}
@@ -61,7 +63,7 @@ async function refreshAccount(){
  if(loading||!ready||!session)return;loading=true;const version=generation;
  try{
  const next=await json('me');if(version!==generation)return;
- const previous=account;account=next;identity();button.hidden=true;exit.hidden=false;retry.hidden=false;
+ const previous=account;account=next;identity();button.hidden=true;googleSlot.hidden=true;exit.hidden=false;retry.hidden=false;
  if(next.status!=='approved'){authorized=false;driveToken=null;clearTimeout(syncTimer);lock(next.status==='blocked'?'Tu acceso está bloqueado. Contacta con Sergio.':'Tu cuenta está pendiente de aprobación por Sergio.');return}
  document.documentElement.classList.remove('handball-login-locked');gate.setAttribute('aria-hidden','true');retry.hidden=true;
  driveAccess={role:next.role,canShare:false,email:next.email};applyAccessUI();
@@ -79,17 +81,33 @@ async function signOut(){
  suppressSync=true;try{await persist()}finally{suppressSync=false}
  await client.auth.signOut();
 }
-button.onclick=async()=>{button.disabled=true;try{
- const {error}=await client.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+location.pathname,queryParams:{prompt:'select_account'}}});if(error)throw error;
- }catch(error){status.textContent=error.message;button.disabled=false}};
+async function prepareGoogle(){
+ if(preparingGoogle)return;preparingGoogle=true;button.disabled=true;
+ try{
+ if(!window.google?.accounts?.id)await loadScript('https://accounts.google.com/gsi/client');
+ const nonce=btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));
+ const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(nonce));
+ const hashed=Array.from(new Uint8Array(digest),x=>x.toString(16).padStart(2,'0')).join('');
+ google.accounts.id.initialize({client_id:window.HANDBALL_GOOGLE_CONFIG.clientId,nonce:hashed,auto_select:false,callback:async response=>{
+ status.textContent='Comprobando tu cuenta…';
+ try{const {error}=await client.auth.signInWithIdToken({provider:'google',token:response.credential,nonce});if(error)throw error;}
+ catch(error){status.textContent='No se pudo iniciar sesión: '+error.message;}
+ }});
+ googleSlot.replaceChildren();googleSlot.hidden=false;
+ google.accounts.id.renderButton(googleSlot,{type:'standard',theme:'outline',size:'large',text:'signin_with',shape:'pill',width:Math.min(360,Math.max(200,gate.clientWidth-100)),locale:'es'});
+ button.hidden=true;
+ }catch(error){button.hidden=false;button.textContent='Reintentar entrada con Google';status.textContent=error.message;}
+ finally{button.disabled=false;preparingGoogle=false}
+}
+button.onclick=prepareGoogle;
 async function start(){
  if(started)return;started=true;
  try{
  if(!config.url||!config.publishableKey)throw Error('El administrador debe completar la configuración de las cuentas.');
  await loadScript('vendor/supabase-2.49.8.js');
  client=window.supabase.createClient(config.url,config.publishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,flowType:'pkce'}});
- client.auth.onAuthStateChange((_event,next)=>{session=next;if(next){setTimeout(()=>{clearInterval(timer);timer=setInterval(refreshAccount,30000);refreshAccount()},0)}else{authorized=false;driveToken=null;account=null;identity();lock('Entra con una cuenta autorizada por Sergio.');button.hidden=false;button.disabled=false}});
- ready=true;button.disabled=false;const {data,error}=await client.auth.getSession();if(error)throw error;session=data.session;if(session)await refreshAccount();else lock('Entra con una cuenta autorizada por Sergio.');
+ client.auth.onAuthStateChange((_event,next)=>{session=next;if(next){setTimeout(()=>{clearInterval(timer);timer=setInterval(refreshAccount,30000);refreshAccount()},0)}else{authorized=false;driveToken=null;account=null;identity();lock('Entra con una cuenta autorizada por Sergio.');button.hidden=false;button.disabled=false;prepareGoogle()}});
+ ready=true;button.disabled=false;const {data,error}=await client.auth.getSession();if(error)throw error;session=data.session;if(session)await refreshAccount();else {lock('Entra con una cuenta autorizada por Sergio.');await prepareGoogle();}
  }catch(error){lock(error.message);button.disabled=true}
 }
 const originalReady=studioReady;studioReady=function(){originalReady();start()};

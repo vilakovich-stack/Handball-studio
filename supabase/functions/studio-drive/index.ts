@@ -40,7 +40,7 @@ Deno.serve(async req=>{
  check(await db.from('studio_members').upsert({email:target,role:input.role,status:input.status,updated_at:new Date().toISOString()},{onConflict:'email'}));return json({ok:true});
  }
  const connection=check(await db.from('studio_drive_connection').select('refresh_token,owner_email').eq('id',true).maybeSingle());
- if(action==='drive-status')return json({connected:!!connection});
+ if(action==='drive-status')return json({connected:!!connection,setupRequired:isOwner&&!Deno.env.get('GOOGLE_CLIENT_SECRET')});
  if(action==='connect'){
  if(!isOwner||req.method!=='POST')return json({error:'Solo el propietario puede conectar Drive.'},403);
  const {code}=await req.json();if(typeof code!=='string'||code.length>4096)return json({error:'Código no válido.'},400);
