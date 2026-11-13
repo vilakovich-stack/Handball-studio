@@ -1,6 +1,7 @@
 import {createClient} from 'npm:@supabase/supabase-js@2.49.8';
 import {normalizeEmail,canWrite,parseDrivePath,listParent} from './policy.ts';
-const env=(name:string)=>{const value=Deno.env.get(name);if(!value)throw new Error('Configuración pendiente: '+name);return value;};
+const defaults:Record<string,string>={STUDIO_OWNER_EMAIL:'servilagar13@gmail.com',STUDIO_DRIVE_FOLDER_ID:'1t5jTPqWFHFaUw3Mz6cYk_s9b75oKwi1E',STUDIO_ALLOWED_ORIGINS:'https://vilakovich-stack.github.io',GOOGLE_CLIENT_ID:'863222978088-05m9ud1at33jikfq54ucilu7kun03eb6.apps.googleusercontent.com'};
+const env=(name:string)=>{const value=Deno.env.get(name)||defaults[name];if(!value)throw new Error('Configuración pendiente: '+name);return value;};
 const folder=()=>env('STUDIO_DRIVE_FOLDER_ID');
 const owner=()=>normalizeEmail(env('STUDIO_OWNER_EMAIL'));
 const admin=()=>createClient(env('SUPABASE_URL'),env('SUPABASE_SERVICE_ROLE_KEY'),{auth:{persistSession:false,autoRefreshToken:false}});
