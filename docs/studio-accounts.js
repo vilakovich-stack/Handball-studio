@@ -2,7 +2,7 @@
 'use strict';
 const config=window.STUDIO_ACCOUNT_CONFIG;
 if(!config?.enabled)return;
-let client,session=null,account=null,ready=false,loading=false,generation=0,timer,started=false;
+let client,session=null,account=null,ready=false,loading=false,generation=0,timer,started=false,accessRender=0;
 const gate=$('#entryGate'),button=$('#entryLogin'),status=$('#entryStatus');
 const googleSlot=document.createElement('div');googleSlot.id='studioGoogleSignIn';button.after(googleSlot);let preparingGoogle=false;
 const note=$('.entry-note');note.textContent='Accede con tu cuenta. Sergio aprueba cada correo y decide sus permisos.';
@@ -31,22 +31,22 @@ $('#connectDrive').onclick=()=>{if(account?.role==='owner')show('access');else t
 $('#disconnectDrive').onclick=signOut;
 $('#importDriveFiles').hidden=true;$('#googleSettings').hidden=true;$('#rememberDrive').closest('div').hidden=true;
 renderAccess=async function(){
+ const renderTicket=++accessRender;
  const panel=$('#accessPanel');$('#accessRole').textContent=account?({owner:'Administrador',writer:'Editor',reader:'Solo lectura'})[account.role]:'Sin sesión';
  if(!account){panel.textContent='Inicia sesión para ver tu cuenta.';return}
  if(account.role!=='owner'){panel.innerHTML='<h2>Tu cuenta</h2><p>'+esc(account.email)+'</p><p>'+esc(account.role==='reader'?'Puedes ver los ejercicios y reproducir animaciones.':'Puedes crear y modificar ejercicios y sesiones.')+'</p>';return}
- panel.innerHTML='<h2>Usuarios y permisos</h2><p>Aprueba correos o bloquea su acceso. Los cambios se comprueban en el servidor.</p><form id="studioInvite" class="invite-form"><label>Correo<input name="email" type="email" required placeholder="entrenador@gmail.com"></label><label>Permiso<select name="role"><option value="reader">Lector</option><option value="writer">Editor</option></select></label><button class="primary">Autorizar correo</button></form><div id="studioUserStatus" role="status"></div><div id="studioUsers">Cargando usuarios…</div><div class="studio-drive-setup"><h2>Biblioteca en Drive</h2><p>La cuenta propietaria conecta la carpeta. Los entrenadores no necesitan configurar Drive.</p><button id="studioConnectOwner">Conectar / renovar mi Drive</button><p id="studioDriveStatus"></p></div>';
+ panel.innerHTML='<h2>Usuarios y permisos</h2><p>Aprueba correos o bloquea su acceso. Los cambios se comprueban en el servidor.</p><form id="studioInvite" class="invite-form"><label>Correo<input name="email" type="email" required placeholder="entrenador@gmail.com"></label><label>Permiso<select name="role"><option value="reader">Lector</option><option value="writer">Editor</option></select></label><button class="primary">Autorizar correo</button></form><div id="studioUserStatus" role="status"></div><div id="studioUsers">Cargando usuarios…</div><div class="studio-drive-setup"><h2>Biblioteca en Drive</h2><p>La cuenta propietaria conecta la carpeta. Los entrenadores no necesitan configurar Drive.</p><button id="studioConnectOwner" disabled>Comprobando conexión…</button><p id="studioDriveStatus" role="status"></p><div id="studioDriveHelp" hidden><a href="https://supabase.com/dashboard/project/nuyuossupchjfnmbpgbe/functions/secrets" target="_blank" rel="noopener">Abrir secretos de Supabase ↗</a><p>Nombre: <code>GOOGLE_CLIENT_SECRET</code>. Valor: tu secreto OAuth de Google. No lo envíes por el chat.</p><button id="studioRefreshDrive">Actualizar conexión</button></div></div>';
  const report=message=>{if($('#studioUserStatus'))$('#studioUserStatus').textContent=message};
  $('#studioInvite').onsubmit=async e=>{e.preventDefault();const form=e.currentTarget,b=form.querySelector('button');b.disabled=true;try{await json('users',{email:form.elements.email.value.trim().toLowerCase(),role:form.elements.role.value,status:'approved'});await renderAccess();toast('Correo autorizado.')}catch(error){report(error.message);b.disabled=false}};
- $('#studioConnectOwner').onclick=async()=>{try{
- await loadGoogle();google.accounts.oauth2.initCodeClient({client_id:window.HANDBALL_GOOGLE_CONFIG.clientId,scope:DRIVE_SCOPE,ux_mode:'popup',callback:async response=>{if(response.error||!response.code){toast('Google no autorizó Drive.');return}try{await json('connect',{code:response.code});toast('Drive conectado.');await activateLibrary();await renderAccess()}catch(error){toast(error.message)}},error_callback:()=>toast('Conexión cancelada.')}).requestCode();
- }catch(error){toast(error.message)}};
  try{
- const [result,drive]=await Promise.all([json('users'),json('drive-status')]);if(!$('#studioUsers'))return;
- $('#studioDriveStatus').textContent=drive.connected?'Drive conectado.':drive.setupRequired?'Falta guardar GOOGLE_CLIENT_SECRET en los secretos de Edge Functions de Supabase.':'Pendiente: conecta tu Drive para cargar la biblioteca.';
- $('#studioConnectOwner').disabled=!!drive.setupRequired;
+ const [result,drive]=await Promise.all([json('users'),json('drive-status')]);if(renderTicket!==accessRender||!$('#studioUsers'))return;
+ $('#studioRefreshDrive').onclick=()=>renderAccess();
+ await window.StudioDriveConnector.mount({button:$('#studioConnectOwner'),status:$('#studioDriveStatus'),help:$('#studioDriveHelp'),setupRequired:drive.setupRequired,loadGoogleScript:()=>loadScript('https://accounts.google.com/gsi/client'),getGoogle:()=>window.google,clientId:window.HANDBALL_GOOGLE_CONFIG.clientId,scope:DRIVE_SCOPE,onCode:async code=>{await json('connect',{code});toast('Drive conectado.');await activateLibrary();await renderAccess()}});
+ if(renderTicket!==accessRender||!$('#studioUsers'))return;
+ if(drive.connected)$('#studioDriveStatus').textContent='Drive conectado. Puedes renovar la autorización cuando Google lo solicite.';
  $('#studioUsers').innerHTML=result.users.length?result.users.map((u,i)=>'<div class="permission-row"><div><b>'+esc(u.email)+'</b><small>'+esc(({pending:'Pendiente de aprobación',approved:'Autorizado',blocked:'Bloqueado'})[u.status])+'</small></div><select data-user-role="'+i+'" aria-label="Permiso de '+esc(u.email)+'"><option value="reader" '+(u.role==='reader'?'selected':'')+'>Lector</option><option value="writer" '+(u.role==='writer'?'selected':'')+'>Editor</option></select><button data-user-approve="'+i+'">'+(u.status==='approved'?'Guardar permiso':'Aprobar')+'</button><button data-user-block="'+i+'">Bloquear</button></div>').join(''):'<p>No hay solicitudes. Añade el primer correo arriba.</p>';
  for(const [selector,target] of [['[data-user-approve]','approved'],['[data-user-block]','blocked']])$$(selector).forEach(b=>b.onclick=async()=>{const index=Number(target==='approved'?b.dataset.userApprove:b.dataset.userBlock),u=result.users[index];const role=panel.querySelector('[data-user-role="'+index+'"]').value;b.disabled=true;try{await json('users',{email:u.email,role,status:target});await renderAccess()}catch(error){report(error.message);b.disabled=false}});
- }catch(error){report(error.message)}
+ }catch(error){report(error.message);const b=$('#studioConnectOwner');if(b){b.disabled=false;b.textContent='Reintentar comprobación';b.onclick=()=>renderAccess()}}
 };
 async function activateLibrary(){
  if(!account||account.status!=='approved')return;
