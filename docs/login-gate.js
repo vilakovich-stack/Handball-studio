@@ -1,6 +1,6 @@
 (function(){
 'use strict';
-if(!window.HANDBALL_AUTH_REQUIRED)return;
+if(!window.HANDBALL_AUTH_REQUIRED||window.STUDIO_ACCOUNT_CONFIG?.enabled)return;
 let ready=false,entered=false;
 const gate=$('#entryGate'),login=$('#entryLogin'),message=$('#entryStatus');
 function updateEntry(){const approved=authorized&&!!driveToken&&['owner','writer','reader'].includes(driveAccess.role);document.documentElement.classList.toggle('handball-login-locked',!approved);gate.setAttribute('aria-hidden',String(approved));if(approved){login.disabled=false;if(!entered){entered=true;show('library')}$('#entryIdentity').textContent=driveAccess.email||'Cuenta Google autorizada'}else{entered=false;login.disabled=!ready||$('#connectDrive').disabled;message.textContent=['Configuración pendiente','Pendiente de conectar'].includes($('#driveStatus').textContent)?'Entra con una cuenta autorizada por Sergio Vila.':$('#driveActivity').textContent||'Entra con una cuenta autorizada por Sergio Vila.'}}

@@ -1,0 +1,4 @@
+# The function verifies the session using auth.getUser and checks membership on
+# EVERY request. Gateway legacy JWT verification cannot validate publishable keys.
+[functions.studio-drive]
+verify_jwt = false
