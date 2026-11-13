@@ -19,7 +19,7 @@ let handler,googleCalls=0;
 const env={SUPABASE_URL:'https://test.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'PRIVATE_SERVICE',STUDIO_ALLOWED_ORIGINS:'https://vilakovich-stack.github.io',STUDIO_OWNER_EMAIL:owner,STUDIO_DRIVE_FOLDER_ID:'root-folder',GOOGLE_CLIENT_ID:'public-client',GOOGLE_CLIENT_SECRET:'PRIVATE_GOOGLE'};
 let source=readFileSync(new URL('../supabase/functions/studio-drive/index.ts',import.meta.url),'utf8');
 source=source.replace(/^import .*;$/gm,'');
-source='const {normalizeEmail,canWrite,parseDrivePath,listParent}=testPolicy;\n'+stripTypeScriptTypes(source);
+source='const {normalizeEmail,canWrite,parseDrivePath,listParent,googleTokenError}=testPolicy;\n'+stripTypeScriptTypes(source);
 vm.runInNewContext(source,{testPolicy:policy,createClient:database,Request,Response,Headers,FormData,Blob,URL,URLSearchParams,console,Deno:{env:{get:key=>env[key]},serve:fn=>{handler=fn}},fetch:async(url,opts)=>{
  googleCalls++;
  if(String(url).includes('oauth2.googleapis.com'))return Response.json({access_token:'PRIVATE_DRIVE'});
@@ -62,4 +62,12 @@ test('approved reader can read library, not arbitrary owner files, with no token
 });
 test('editor cannot create files in an outside folder',async()=>{
  assert.equal((await request('editor','proxy&path=drive/v3/files',{name:'folder',mimeType:'application/vnd.google-apps.folder',parents:['outside']})).status,400);
+});
+
+test('Google authorization failures distinguish first connection from expired refresh and never echo provider details',()=>{
+ assert.match(policy.googleTokenError('invalid_client','authorization_code'),/GOOGLE_CLIENT_SECRET/);
+ assert.match(policy.googleTokenError('invalid_grant','authorization_code'),/código nuevo/);
+ assert.match(policy.googleTokenError('invalid_grant','refresh_token'),/caducado/);
+ assert.ok(!policy.googleTokenError('invalid_grant','authorization_code').includes('caducado'));
+ assert.ok(!policy.googleTokenError('PRIVATE_SECRET_SENT_BY_PROVIDER','authorization_code').includes('PRIVATE_SECRET'));
 });

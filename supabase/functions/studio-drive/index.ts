@@ -1,5 +1,5 @@
 import {createClient} from 'npm:@supabase/supabase-js@2.49.8';
-import {normalizeEmail,canWrite,parseDrivePath,listParent} from './policy.ts';
+import {normalizeEmail,canWrite,parseDrivePath,listParent,googleTokenError} from './policy.ts';
 const defaults:Record<string,string>={STUDIO_OWNER_EMAIL:'servilagar13@gmail.com',STUDIO_DRIVE_FOLDER_ID:'1t5jTPqWFHFaUw3Mz6cYk_s9b75oKwi1E',STUDIO_ALLOWED_ORIGINS:'https://vilakovich-stack.github.io',GOOGLE_CLIENT_ID:'863222978088-05m9ud1at33jikfq54ucilu7kun03eb6.apps.googleusercontent.com'};
 const env=(name:string)=>{const value=Deno.env.get(name)||defaults[name];if(!value)throw new Error('Configuración pendiente: '+name);return value;};
 const folder=()=>env('STUDIO_DRIVE_FOLDER_ID');
@@ -7,8 +7,8 @@ const owner=()=>normalizeEmail(env('STUDIO_OWNER_EMAIL'));
 const admin=()=>createClient(env('SUPABASE_URL'),env('SUPABASE_SERVICE_ROLE_KEY'),{auth:{persistSession:false,autoRefreshToken:false}});
 function check(result:any){if(result.error)throw new Error('No se pudo guardar o consultar la configuración.');return result.data;}
 async function googleToken(params:Record<string,string>){
- const response=await fetch('https://oauth2.googleapis.com/token',{method:'POST',body:new URLSearchParams({...params,client_id:env('GOOGLE_CLIENT_ID'),client_secret:env('GOOGLE_CLIENT_SECRET')})});
- const data=await response.json();if(!response.ok)throw new Error('Debes volver a conectar el Drive del administrador.');return data;
+ const response=await fetch('https://oauth2.googleapis.com/token',{method:'POST',body:new URLSearchParams({...params,client_id:env('GOOGLE_CLIENT_ID').trim(),client_secret:env('GOOGLE_CLIENT_SECRET').trim()})});
+ const data=await response.json();if(!response.ok){const safeCode=['invalid_client','invalid_grant','redirect_uri_mismatch','invalid_scope'].includes(data.error)?data.error:'other';console.warn('studio_google_token_error',safeCode,params.grant_type,response.status);throw new Error(googleTokenError(safeCode,params.grant_type))}return data;
 }
 Deno.serve(async req=>{
  let cors:Record<string,string>={'Vary':'Origin','Cache-Control':'no-store'};
