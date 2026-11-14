@@ -1,3 +1,5 @@
 .studio-drive-setup{border-top:1px solid #dbe6df;margin-top:24px;padding-top:20px}#studioAccountBadge{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}#studioUsers{margin-top:20px}#studioUserStatus{color:#973f27;margin-top:12px}.permission-row small{display:block}.permission-row{flex-wrap:wrap;gap:10px}@media(max-width:650px){#studioAccountBadge{max-width:160px}.permission-row>div{flex-basis:100%}}
 
 #studioGoogleSignIn{display:flex;justify-content:center;margin:18px 0}#studioGoogleSignIn[hidden]{display:none}
+
+#access .role-cards[hidden],#access .access-help[hidden],nav [data-view="storage"][hidden]{display:none!important}.workspace small{overflow-wrap:anywhere}.profile small{overflow-wrap:anywhere}#adminAccountIdentity{font-size:13px;overflow-wrap:anywhere}

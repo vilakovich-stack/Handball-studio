@@ -9,9 +9,19 @@ const note=$('.entry-note');note.textContent='Accede con tu cuenta. Sergio aprue
 const exit=document.createElement('button');exit.textContent='Usar otra cuenta / salir';exit.hidden=true;button.after(exit);
 const retry=document.createElement('button');retry.textContent='Comprobar aprobación';retry.hidden=true;exit.after(retry);
 const badge=document.createElement('button');badge.id='studioAccountBadge';badge.onclick=()=>show('access');$('.header-right').append(badge);
-const logout=document.createElement('button');logout.textContent='Salir';logout.onclick=signOut;$('.header-right').append(logout);exit.onclick=signOut;
+const logout=document.createElement('button');logout.textContent='Cambiar cuenta';logout.title='Cerrar esta sesión y entrar con otra cuenta de Google';logout.onclick=signOut;$('.header-right').append(logout);exit.onclick=signOut;
 function lock(message){document.documentElement.classList.add('handball-login-locked');gate.setAttribute('aria-hidden','false');status.textContent=message;}
-function identity(){badge.textContent=account?account.name+' · '+({owner:'Administrador',writer:'Editor',reader:'Lector'})[account.role]:'Sin sesión';const profile=$('.profile span');if(profile){profile.textContent=account?.name||'Tu cuenta';const small=document.createElement('small');small.textContent=account?.email||'Acceso privado';profile.append(small)}const avatar=$('.header-right .avatar');if(avatar)avatar.textContent=account?(account.name||account.email).slice(0,2).toUpperCase():'HS';}
+function identity(){
+ const model=window.StudioAccountProfile.render(document,account);
+ badge.textContent=model.name+' · '+model.role;badge.title=model.email;
+ const avatar=$('.header-right .avatar');if(avatar)avatar.onclick=()=>show('access');
+ const cloud=$('#cloudBadge');if(cloud)cloud.onclick=()=>show(account?.role==='owner'?'storage':'access');
+}
+const accountShow=show;show=function(view){
+ if(account?.role!=='owner'&&view==='storage')view='access';
+ accountShow(view);if(view==='access')$('#crumb').textContent=account?.role==='owner'?'Administración':'Mi cuenta';
+};
+
 async function api(action,options={}){
  const {data,error}=await client.auth.getSession();if(error||!data.session)throw Error('Inicia sesión de nuevo.');
  const response=await fetch(config.url+'/functions/v1/studio-drive?action='+action,{...options,headers:{apikey:config.publishableKey,Authorization:'Bearer '+data.session.access_token,...options.headers}});
@@ -34,8 +44,9 @@ renderAccess=async function(){
  const renderTicket=++accessRender;
  const panel=$('#accessPanel');$('#accessRole').textContent=account?({owner:'Administrador',writer:'Editor',reader:'Solo lectura'})[account.role]:'Sin sesión';
  if(!account){panel.textContent='Inicia sesión para ver tu cuenta.';return}
- if(account.role!=='owner'){panel.innerHTML='<h2>Tu cuenta</h2><p>'+esc(account.email)+'</p><p>'+esc(account.role==='reader'?'Puedes ver los ejercicios y reproducir animaciones.':'Puedes crear y modificar ejercicios y sesiones.')+'</p>';return}
- panel.innerHTML='<h2>Usuarios y permisos</h2><p>Aprueba correos o bloquea su acceso. Los cambios se comprueban en el servidor.</p><form id="studioInvite" class="invite-form"><label>Correo<input name="email" type="email" required placeholder="entrenador@gmail.com"></label><label>Permiso<select name="role"><option value="reader">Lector</option><option value="writer">Editor</option></select></label><button class="primary">Autorizar correo</button></form><div id="studioUserStatus" role="status"></div><div id="studioUsers">Cargando usuarios…</div><div class="studio-drive-setup"><h2>Biblioteca en Drive</h2><p>La cuenta propietaria conecta la carpeta. Los entrenadores no necesitan configurar Drive.</p><button id="studioConnectOwner" disabled>Comprobando conexión…</button><p id="studioDriveStatus" role="status"></p><div id="studioDriveHelp" hidden><a href="https://supabase.com/dashboard/project/nuyuossupchjfnmbpgbe/functions/secrets" target="_blank" rel="noopener">Abrir secretos de Supabase ↗</a><p>Nombre: <code>GOOGLE_CLIENT_SECRET</code>. Valor: tu secreto OAuth de Google. No lo envíes por el chat.</p><button id="studioRefreshDrive">Actualizar conexión</button></div></div>';
+ if(account.role!=='owner'){panel.innerHTML='<h2>'+esc(account.name||'Tu cuenta')+'</h2><p>'+esc(account.email)+'</p><p>'+esc(account.role==='reader'?'Puedes ver los ejercicios y reproducir animaciones.':'Puedes crear y modificar ejercicios y sesiones.')+'</p>';return}
+ panel.innerHTML='<h2>Usuarios y permisos</h2><p id="adminAccountIdentity"></p><p>Aprueba correos o bloquea su acceso. Los cambios se comprueban en el servidor.</p><form id="studioInvite" class="invite-form"><label>Correo<input name="email" type="email" required placeholder="entrenador@gmail.com"></label><label>Permiso<select name="role"><option value="reader">Lector</option><option value="writer">Editor</option></select></label><button class="primary">Autorizar correo</button></form><div id="studioUserStatus" role="status"></div><div id="studioUsers">Cargando usuarios…</div><div class="studio-drive-setup"><h2>Biblioteca en Drive</h2><p>La cuenta propietaria conecta la carpeta. Los entrenadores no necesitan configurar Drive.</p><button id="studioConnectOwner" disabled>Comprobando conexión…</button><p id="studioDriveStatus" role="status"></p><div id="studioDriveHelp" hidden><a href="https://supabase.com/dashboard/project/nuyuossupchjfnmbpgbe/functions/secrets" target="_blank" rel="noopener">Abrir secretos de Supabase ↗</a><p>Nombre: <code>GOOGLE_CLIENT_SECRET</code>. Valor: tu secreto OAuth de Google. No lo envíes por el chat.</p><button id="studioRefreshDrive">Actualizar conexión</button></div></div>';
+ $('#adminAccountIdentity').textContent='Tu cuenta: '+account.email+' · Administrador';
  const report=message=>{if($('#studioUserStatus'))$('#studioUserStatus').textContent=message};
  $('#studioInvite').onsubmit=async e=>{e.preventDefault();const form=e.currentTarget,b=form.querySelector('button');b.disabled=true;try{await json('users',{email:form.elements.email.value.trim().toLowerCase(),role:form.elements.role.value,status:'approved'});await renderAccess();toast('Correo autorizado.')}catch(error){report(error.message);b.disabled=false}};
  try{
@@ -75,7 +86,7 @@ async function refreshAccount(){
 }
 retry.onclick=refreshAccount;
 async function signOut(){
- generation++;clearTimeout(syncTimer);clearInterval(timer);authorized=false;driveToken=null;account=null;session=null;
+ generation++;window.google?.accounts?.id?.disableAutoSelect();clearTimeout(syncTimer);clearInterval(timer);authorized=false;driveToken=null;account=null;session=null;
  stop();state={exercises:[],sessions:[],folders:[],draft:null};draft=blank();frame=0;renderLibrary();loadFields();identity();lock('Entra con una cuenta autorizada por Sergio.');button.hidden=false;exit.hidden=true;retry.hidden=true;
  // Clear browser workspace on explicit logout; exported backups and Drive remain.
  suppressSync=true;try{await persist()}finally{suppressSync=false}
